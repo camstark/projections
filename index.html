@@ -1,0 +1,243 @@
+<html>
+<head>
+<style>
+
+html {
+	font-family: monospace;
+}
+
+svg {
+	cursor: crosshair;
+}
+
+.calgary {
+	fill: none;
+	stroke: #000;
+	stroke-width: ".5px";
+	stroke-linejoin: "round";
+}
+
+.coordinates {
+	text-anchor: middle;
+	fill: #000;
+	text-shadow: -1px  0px 0px #fff, 
+                0px  1px 0px #fff,
+                1px  0px 0px #fff, 
+                0px -1px 0px #fff;
+}
+
+.hidden {
+	display: none;
+}
+
+</style>
+</head>
+<body>
+
+<div class="container-fluid">
+	<nav class="navbar navbar-expand-lg navbar-light bg-light">
+	  <a class="navbar-brand">Calgary in different projections</a>
+
+	    <ul class="navbar-nav mr-auto">
+	      <li class="nav-item dropdown">
+	        <a class="nav-link dropdown-toggle" id="navbarDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+	          Choose a projection
+	        </a>
+	        <div id="ddm" class="dropdown-menu" aria-labelledby="navbarDropdown">
+	        </div>
+	      </li>
+	    </ul>
+	</nav>
+
+  <div class="row">
+    <div class="col">
+    	<div class="card">
+		  <img class="card-img-top">
+		  <div class="card-body" id="card">
+		    <h5 class="card-title"></h5>
+       		<a target="_blank" class="card-link"></a>
+		    <p class="card-text"></p>
+		  </div>
+		</div>
+    </div>
+    <div class="col-8 col-sm-12" id="map"></div>
+  </div>
+
+
+</div>
+
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<script src="https://d3js.org/topojson.v1.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.4.4/proj4.js"></script>
+
+<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+<script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
+<script src="http://mechanicalscribe.com/notes/topojson-mesh-vs-merge/src/elasticSVG.js"></script>
+
+<script>
+//Dynamically rendering projections with D3, Topojson and proj4
+//http://bl.ocks.org/armollica/e6371dcceed6d89312cf6a78be1a0b49
+
+var options = [
+	{ name: "NAD83 Alberta 3TM 114W", epsg:"3776",
+	  description: "The projected coordinate system used to store data at The City of Calgary, including geospatial datasets purchased from City Online.",
+	  proj4: "+proj=tmerc +lat_0=0 +lon_0=-114 +k=0.9999 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs" },
+	{ name: "WGS84", epsg:"4326",
+	  description: "The geographic coordinate system used to store data on the Open Data portal.",
+      proj4: "+proj=longlat +datum=WGS84 +no_defs" },
+	{ name: "WGS84 Pseudo-Mercator", epsg:"3857", 
+	  description: "The projected coordinate system used to render most web maps, including those on the Open Data portal.",
+	  proj4: "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext  +no_defs" },
+	{ name: "Statistics Canada Lambert", epsg:"3347", 
+	  description: "The projected coordinate system used to share most Statistics Canada data (Lambert Conformal Conic).",
+	  proj4: "+proj=lcc +lat_1=49 +lat_2=77 +lat_0=63.390675 +lon_0=-91.86666666666666 +x_0=6200000 +y_0=3000000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs" },
+	{ name: "NAD83 / UTM Zone 11N", epsg:"2955", 
+	  description: "The Universal Transverse Mercator projected coordinate system also used by Statistics Canada. Calgary is in Zone 11.",
+	  proj4: "+proj=utm +zone=11 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs" },
+	{ name: "Antarctic Polar Sterographic", epsg:"3031", 
+	  description: "A projected coordinate system designed for mapping Antarctica.",
+	  proj4: "+proj=stere +lat_0=-90 +lat_ts=-71 +lon_0=0 +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs" }
+];
+
+var proj = proj4(options[0].proj4);
+modifyMenu(0);
+
+var project = function(lambda, phi) {
+	return proj.forward([lambda, phi].map(radiansToDegrees));
+};
+
+project.invert = function(x, y) {
+	return proj.inverse([x, y]).map(degreesToRadians);
+};
+
+var projection = d3.geoProjection(project);
+
+var width = 900,
+	height = 600;
+
+var coordinateFormat = d3.format(".2f");
+
+var svg = d3.select("#map").append("svg")
+	.attr("width", width)
+	.attr("height", height);
+
+// make the SVG responsive
+// var el_meshed = elasticSVG("#map", {
+// 	height: 600,
+// 	aspect: 0.65,
+// 	resize: "auto"
+// });
+
+// var svg = d3.select(el_meshed.svg).append("g");
+
+var path = d3.geoPath()
+	.projection(projection);
+
+d3.json("https://camstark.github.io/calgis/community-2016-quantized-topo.json", function(error, data) {
+	if (error) throw error;
+
+	// var calgary = topojson.feature(data, data.objects.collection);
+	var calgary = topojson.mesh(data, data.objects.collection, function(a, b) {return a !== b});
+
+	fitProjection(calgary);
+
+	var limits = svg.append("path").datum(topojson.merge(data, data.objects.collection.geometries.filter(function(d) { return d; })))
+		.attr("class", "calgary")
+		.attr("d", path);
+
+	var borders = svg.append("path").datum(calgary)
+		.attr("class", "calgary")
+		.attr("d", path);
+	
+	var coordinates = svg.append("text")
+		.attr("class", "coordinates")
+		.attr("dy", "-1.66em")
+		.classed("hidden", true);
+
+	var choices = d3.select("#ddm")
+
+	choices.selectAll("a")
+			.data(options)
+		.enter().append("a")
+			.attr("class", "dropdown-item")
+			.text(function(d) { return d.name; })
+			.attr("data-choice", function(d, i) { return i; })
+			.on("click", change);
+
+	$("#ddm > a:nth-child(3)").after('<div class="dropdown-divider"></div>')
+
+	function change() {
+
+		var choice = $(this).attr("data-choice")
+
+		proj = proj4(options[choice].proj4);
+		
+		fitProjection(calgary);
+
+		borders
+			.transition(d3.transition().duration(750))
+				.attr("d", path);
+
+		limits
+			.transition(d3.transition().duration(750))
+				.attr("d", path);
+
+		modifyMenu(choice)
+
+	}
+
+	svg
+		.on("mousemove", mousemove)
+		.on("mouseleave", mouseleave);
+
+	function mousemove() {
+		var mouse = d3.mouse(this),
+				p = projection.invert(mouse),
+				text = "(" + coordinateFormat(p[1]) + "°, " + 
+							 coordinateFormat(p[0]) + "°)";
+
+		coordinates	
+			.classed("hidden", false)
+			.attr("x", mouse[0])
+			.attr("y", mouse[1])
+			.text(text);
+	}
+
+	function mouseleave() {
+		coordinates.classed("hidden", true);
+	}
+});
+
+function degreesToRadians(degrees) { return degrees * Math.PI / 180; }
+function radiansToDegrees(radians) { return radians * 180 / Math.PI; }
+
+
+function fitProjection(geometry) {
+	// Fit geometry to screen
+	// see http://bl.ocks.org/mbostock/4707858
+
+	projection
+		.scale(1)
+		.translate([0, 0]);
+
+	var b = path.bounds(geometry),
+      s = .95 / Math.max((b[1][0] - b[0][0]) / width, (b[1][1] - b[0][1]) / height),
+    	t = [(width - s * (b[1][0] + b[0][0])) / 2, (height - s * (b[1][1] + b[0][1])) / 2];
+	
+	projection
+		.scale(s)
+		.translate(t);
+}
+
+function modifyMenu(choice) {
+		$('#navbarDropdown').text(options[choice].name)
+		$('#card > .card-title').text(options[choice].name)
+		$('#card > .card-link').text("EPSG:"+options[choice].epsg)
+		$('#card > .card-link').attr("href", "https://epsg.io/"+options[choice].epsg)
+		$('#card > .card-text').text(options[choice].description)
+}
+</script>
+</body>
+</html>
